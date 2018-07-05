@@ -1,0 +1,184 @@
+---
+title: "Was this Yelp review useful?"
+author: "Yixin (Vera) Bao, Jun Ouyang"
+output: html_document
+---
+
+```{r, message = FALSE, warning=FALSE}
+library(readr)
+library(mosaic)
+require(mosaicData)
+require(knitr)
+require(leaps)
+# install.packages("car")
+require(car)
+opts_chunk$set(eval=TRUE, cache=TRUE)
+cols =  trellis.par.get()$superpose.symbol$col
+```
+
+####Abstract
+Our study investigates what kind of Yelp reviews are more likely to receive “useful” votes from other users. Through using logistic regression and a nested likelihood ratio test, we found that the number of friends that the reviewer has on Yelp and the length of the review text are two significant predictors for the review’s likelihood of receiving “useful” vote(s). Even though our model succeeds in correctly predicting 69.33% of the observations in our sample, the utility of the model is limited by potential violation of linearity and independence conditions. 
+
+####Introduction
+Before going to new restaurants, many people rely on ratings and crowd-sourced reviews from Yelp to decide if the restaurants worth a try. Yelp also allows individual users to decide and vote if the reviews are “useful,” “funny” or “cool.” However, are reviews that are marked as “useful” by other users truly helpful and reliable? The goal of our study is to assess what kind of reviews are more likely to receive “useful” vote(s) from other users. 
+
+Using data from Yelp Dataset Challenge, we tried to investigate what attributes of reviews, reviewers and reviewed businesses determine the review’s likelihood of receiving “useful” vote(s) through logistic regression. The full model include six quantitative explanatory variables: the overall rating of the business, number of reviews received by the reviewed business, number of characters contained in the review, number of reviews posted by reviewer, number of friends the reviewer had on Yelp and the date of the review. We found that number of friends that the reviewer had on Yelp and the length of the review measured by number of characters are two significant predictors of the likelihood of receiving “useful” vote. After using a nested likelihood ratio test, we decided that these two variables alone will make the best model, which predicts 69.33% of the observations in our sample correctly. However, after checking the conditions for logistic regression model, we found out that the utility of the model is limited by violation of linearity and independence conditions.  
+
+####Data 
+
+We used data from Yelp Dataset Challenge, which provides information of 2.7M reviews, 687K users and 86K businesses in ten cities across four countries. In our study, we randomly selected 300 reviews on businesses in Las Vegas as our sample. The total observations from Las Vegas business dataset is 66K. 
+The raw data was available in three json files categorized by businesses, reviews and users. We then converted the files into csv format and combined the three datasets. After cleaning and filtering the data, we randomly selected 300 reviews on businesses in Las Vegas as our sample. 
+
+The `useful_votes` variable we had was a quantitative variable. It indicated the number of useful votes a particular review had. Initially, we took `useful_votes` as our quantitative response variable and wanted to use a multiple linear regression model. To find the best model, we used stepwise regression by setting nvmax = 6. However, most of the coefficients were not statistically significant at 5% significance level. Only the model with explanatory variables `text_length` and `num_friends` have statistically significant coefficients. However, R-squared value was only about 0.22, which means 22% of the variability in number of “useful” votes can be explained by explanatory variables `text_length` and `num_friends`, which was unsatisfactory. Therefore, we wanted to use a logistic model instead and our new binary response variable is whether a review receives a “useful” vote or not. We transformed the quantitative variable `useful_votes` into a binary variable.
+
+
+```{r, message=FALSE}
+yelp = read_csv("ProjectData.csv")
+```
+```{r}
+# Transform the useful_votes variable into a binary variable
+yelp = yelp %>%
+  mutate (review = ifelse (useful_votes > 0, 1, 0))
+```
+
+```{r}
+str(yelp)
+head(yelp)
+row_mean = apply(yelp, 2, mean)
+row_std = apply(yelp, 2, sd)
+#print(row_mean, row_std)
+#tol = 3
+#yelp_filter = abs(yelp-row_mean)/row_std > tol
+#head(yelp_filter)
+#print(sum(yelp_filter))
+```
+
+The response variable is whether a review receives “useful” vote(s): 0 = No, 1 = Yes; and our quantitative explanatory variables include: 
+
+- `time_diff_days` contains number of days between the date of the review and now;
+- `biz_stars` contains the overall rating of the business that a particular review commented on (numeric);
+- `biz_reviews` contains the number of reviews received by the business that a particular review commented on (integer);
+- `text_length` contains the number of characters in a particular review (integer); 
+- `num_friends` contains the number of friends that the reviewer connected on Yelp (integer);
+- `user_review_count` contains the number of review(s) that the reviewers posted on Yelp (integer);
+
+####Results 
+
+```{r,warning=FALSE}
+require(lmtest)
+m1 = glm (review ~ num_friends, data = yelp, family = binomial)
+m2 = glm (review ~ num_friends + text_length, data = yelp, family = binomial)
+m3 = glm (review ~ num_friends + text_length + biz_stars, data = yelp, family = binomial)
+m4 = glm (review ~ num_friends + text_length + biz_stars + biz_reviews, data = yelp, family = binomial)
+m5 = glm(review ~ num_friends + text_length + biz_stars + biz_reviews + time_diff_days, data = yelp, family = binomial)
+m6 = glm (review ~ num_friends + text_length + biz_stars + biz_reviews + time_diff_days + user_review_count, data = yelp, family = binomial)
+fullmodel = glm (review ~ .-useful_votes, data = yelp, family = binomial)
+lrtest(m1, m2, m3, m4, m5, m6, fullmodel)
+```
+
+We ran the nested likelihood test to try to select the best model. Starting from the model with one variable, we add one variable each time to a new model until we get the full model with 7 variables. By comparing to the previous model each time, the nested likelihood test showed that the second model, m2, with variables `num_friends` and `text_length` is the best one, since the p-value for this one is significant and p-values for models after m2 are all not significant at 5% significance level. Therefore, we choose m2 as our best model. We found no evidence that explanatory variables `biz_stars`, `biz_reviews`,  `user_review_count` and `time_diff_days` are associated with the response variable receiving useful vote or not. 
+
+
+```{r}
+# Final model #2 with significant predictors only
+fm2 = glm (review ~ text_length + num_friends, data = yelp, family = binomial)
+summary (fm2)
+```
+
+The logit form for our final model #2 is
+$$
+\log \left( \frac{\pi}{1-\pi} \right) = logit(\pi)
+= \beta_0 + \beta_1 \cdot \text{text_length} + \beta_2 \cdot \text{num_friends}
+$$
+$$
+=-1.1245446 + 0.0006250 \cdot \text{text_length} + 0.0129221 \cdot \text{num_friends}
+$$
+
+#####Checking the Conditions for Logistic Regression:
+
+Independence: 
+
+The condition for independence might not hold, because some of the reviews might be written for the same business, and reviews that were posted earlier might influence the review posted later for the same business. Unless we could prove that all the observations in this dataset contributed to different businesses and were not influenced by each other, we could not conclude that the condition for independence is satisfied. 
+
+Randomness:
+
+The condition for randomness holds. The observations in this dataset are randomly selected from over 66,000 reviews for business in Las Vegas, so these observations are not selected on purpose. Therefore, the condition for randomness is satisfied.  
+
+Linearity:
+
+Since we have not found a way to check the condition of linearity for logistic regression with multiple explanatory variables, we check the condition for logistic regression models with single explanatory variable each time in the empirical logit graph. The variables we chose are `num_friends` and `text_length`.  
+```{r}
+plot(yelp$num_friends, yelp$text_length)
+plot(fm2$residuals)
+
+
+```
+```{r}
+#for num_friends
+yelp = yelp %>%
+  mutate(numGroup = cut(num_friends, breaks=100))
+#favstats(~review | numGroup, data=yelp)
+fit.outcome = makeFun(m1)
+binned.y = mean(~review | numGroup, data=yelp)
+binned.x = mean(~num_friends | numGroup, data=yelp)
+binplot = xyplot(binned.y ~ binned.x, cex=2, pch=19, col="orange", lwd=3)
+plotFun(fit.outcome(num_friends=x, review=1) ~ x, lwd=3, add=TRUE, plot=binplot)
+plotFun(fit.outcome(num_friends=x, reivew=0) ~ x, col=cols[2], lwd=3, add=TRUE)
+xyplot(logit(binned.y) ~ binned.x, pch=19, cex=2, col="orange")
+yelp = yelp %>%
+  mutate(logm.link = predict(m1, type="link"))
+ladd(with(subset(yelp, review==1), panel.xyplot(num_friends, logm.link, col=cols[1], type="l")))
+```
+
+The linearity condition for num_friends is violated, as we could not see a linear trend in the empirical logit graph. 
+
+```{r}
+#for text_length
+yelp = yelp %>%
+  mutate(textGroup = cut(text_length, breaks=100))
+#favstats(~review | textGroup, data=yelp)
+m7 = glm (review ~ text_length, data = yelp, family = binomial)
+fit.outcome = makeFun(m7)
+binned.y = mean(~review | textGroup, data=yelp)
+binned.x = mean(~text_length | textGroup, data=yelp)
+binplot = xyplot(binned.y ~ binned.x, cex=2, pch=19, col="orange", lwd=3)
+plotFun(fit.outcome(text_length=x, review=1) ~ x, lwd=3, add=TRUE, plot=binplot)
+plotFun(fit.outcome(text_length=x, reivew=0) ~ x, col=cols[2], lwd=3, add=TRUE)
+xyplot(logit(binned.y) ~ binned.x, pch=19, cex=2, col="orange")
+yelp = yelp %>%
+  mutate(logm.link = predict(m7, type="link"))
+ladd(with(subset(yelp, review==1), panel.xyplot(text_length, logm.link, col=cols[1], type="l")))
+```
+
+The linearity condition for `text_length` is violated in the empirical logit graph. 
+
+Therefore, the condition for linearity is violated. 
+
+#### Prediction Correctness
+
+```{r}
+yelp = yelp %>%
+  mutate(fitted = fitted.values(fm2)) %>%
+  mutate(fit.useful = ifelse(fitted >= 0.5, 1, 0))
+tb1=tally(~review | fit.useful, data=yelp)
+tb1
+160/(160+76)
+48/(48+16)
+(160+48) / 300
+```
+
+160 reviews that were not expected to receive the useful votes did not receive the useful votes in reality. And 48 reviews that were expected to receive the useful votes by our prediction received the useful votes, which also matched our prediction. The percentage of correct prediction for not receiving votes is about 67.78%, and the that for receiving votes is about 75%. Overall, the net percentage of our correct prediction is 69.33%. 
+
+
+####Conclusion
+
+By our multiple logistic model and a nested likelihood ratio test, we were able to conclude that the length of the review measured by number of characters and the number of friends a reviewer has on Yelp are the two significant predictors determining a review’s likelihood of receiving “useful” vote. Other variables including the overall rating of the business, number of reviews received by the reviewed business, number of reviews posted by reviewer, and the date of the review
+are not statistically significant. So, a long review written by a reviewer who has many friends on Yelp is more likely to receive "useful" vote. Our logistic model, having `text_length` and `num_friends` as two explanatory variables and review as the binary response variable, succeeds in correctly predicting 69.33% of the observations in our sample. However, the utility of the model is limited by potential violation of linearity and independence conditions. 
+
+
+For future research, it might be interesting to compare data from different regions or countries. Are American restaurants more likely to receive useful votes than Asian restaurants? Is there any cultural difference? We could also include other explanatory variables such as business type to investigate if a steak house is more likely to receive useful votes than a buffet. 
+
+
+
+
+
